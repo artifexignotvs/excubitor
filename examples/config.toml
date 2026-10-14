@@ -1,0 +1,20 @@
+# Vigilantia ex indiciis nascitur.
+[detection]
+window = 60
+auth_window = 300
+cooldown = 120
+allowed_lateness = 30
+scan_ports = 20
+scan_hosts = 15
+auth_failures = 8
+spray_users = 6
+distributed_sources = 5
+web_paths = 12
+web_denials = 20
+max_keys = 10000
+max_events_per_key = 512
+disabled_rules = []
+
+[allowlist]
+sources = []
+destinations = []
