@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "excubitor-watch"
+version = "0.1.0"
+description = "Terminal-first scan and authentication threat correlation."
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Artifex Ignotvs"}]
+dependencies = []
+keywords = ["security", "detection", "terminal", "suricata", "zeek", "ssh"]
+classifiers = ["Programming Language :: Python :: 3", "Topic :: Security", "Environment :: Console"]
+
+[project.scripts]
+excubitor = "excubitor.cli:main"
+
+[project.urls]
+Repository = "https://github.com/artifexignotvs/excubitor"
+Issues = "https://github.com/artifexignotvs/excubitor/issues"
+
+[tool.setuptools]
+packages = ["excubitor"]
