@@ -1,0 +1,4 @@
+include README.md FORMATS.md SECURITY.md CONTRIBUTING.md CHANGELOG.md LICENSE
+recursive-include examples *.jsonl *.toml
+recursive-include assets *.gif *.mp4
+recursive-include tests *.py
