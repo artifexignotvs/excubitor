@@ -3,7 +3,7 @@ from dataclasses import replace
 from .model import Event
 
 
-def demo_events() -> list[Event]:
+def demo_events(scenario="all") -> list[Event]:
     result = []
     base = 1791979200.0
     def add(offset, **kwargs):
@@ -26,4 +26,8 @@ def demo_events() -> list[Event]:
     add(135, kind="alert", src="192.0.2.70", dst="198.51.100.90", signature="Synthetic upstream detection for demonstration", severity="high")
     for i in range(5):
         add(140 + i, kind="conn", src="192.0.2.100", dst="198.51.100.100", port=443)
+    if scenario == "ssh":
+        return [event for event in result if event.src == "192.0.2.30"]
+    if scenario != "all":
+        raise ValueError("Unknown demo scenario")
     return result
