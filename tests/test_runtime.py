@@ -91,7 +91,8 @@ class RuntimeTests(unittest.TestCase):
                 for identifier in ("first", "second"):
                     store.add(Alert(identifier, "upstream_alert", "medium", 100, 100,
                                     "192.0.2.1", "198.51.100.1", 1, "Synthetic"))
-                store.acknowledge("' OR 1=1 --")
+                with self.assertRaises(ValueError):
+                    store.acknowledge("' OR 1=1 --")
                 self.assertFalse(any(row["acknowledged"] for row in store.list()))
                 store.acknowledge("first")
                 self.assertEqual({row["id"] for row in store.list() if row["acknowledged"]}, {"first"})
