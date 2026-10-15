@@ -5,6 +5,7 @@ from pathlib import Path
 import csv
 import io
 import json
+import math
 import os
 import sqlite3
 from .model import Alert, iso_time
@@ -55,16 +56,40 @@ class Store:
         self.db.commit()
 
     def acknowledge(self, identifier: str, value: bool = True) -> None:
-        self.db.execute("UPDATE alerts SET acknowledged=? WHERE id=?", (int(value), identifier))
+        cursor = self.db.execute("UPDATE alerts SET acknowledged=? WHERE id=?", (int(value), identifier))
+        if not cursor.rowcount:
+            raise ValueError("Alert identifier was not found")
         self.db.commit()
 
-    def list(self, limit: int = 1000, rule: str | None = None) -> list[dict]:
-        if not 1 <= limit <= 100000:
+    def list(self, limit: int = 1000, rule: str | None = None, *, source=None, destination=None,
+             severity=None, since=None, until=None, unacknowledged=False) -> list[dict]:
+        if type(limit) is not int or not 1 <= limit <= 100000:
             raise ValueError("History limit must be between 1 and 100000")
-        if rule:
-            rows = self.db.execute("SELECT payload,acknowledged FROM alerts WHERE rule=? ORDER BY ts DESC,id LIMIT ?", (rule, limit))
-        else:
-            rows = self.db.execute("SELECT payload,acknowledged FROM alerts ORDER BY ts DESC,id LIMIT ?", (limit,))
+        clauses, parameters = [], []
+        for name, value in (("rule", rule), ("severity", severity)):
+            if value is not None:
+                clauses.append(name + "=?")
+                parameters.append(value)
+        for operator, value in ((">=", since), ("<=", until)):
+            if value is not None:
+                if type(value) not in (int, float) or not 0 <= value <= 253402214400 or not math.isfinite(value):
+                    raise ValueError("History timestamps must be finite and nonnegative")
+                clauses.append("ts" + operator + "?")
+                parameters.append(value)
+        if since is not None and until is not None and since > until:
+            raise ValueError("History since must not be after until")
+        if unacknowledged:
+            clauses.append("acknowledged=0")
+        # Valores externi semper ut parametri ligantur.
+        for field, value in (("src", source), ("dst", destination)):
+            if value is not None:
+                clauses.append("json_extract(payload, '$." + field + "')=?")
+                parameters.append(value)
+        query = "SELECT payload,acknowledged FROM alerts"
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY ts DESC,id LIMIT ?"
+        rows = self.db.execute(query, [*parameters, limit])
         result = []
         for payload, acknowledged in rows:
             item = json.loads(payload)

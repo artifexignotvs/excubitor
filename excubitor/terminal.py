@@ -28,6 +28,8 @@ class Dashboard:
         self.selected = 0
         self.filter = ""
         self.severity = False
+        self.unacknowledged = False
+        self.priority_sort = False
         self.details = False
         self.detail_offset = 0
         self.paused = False
@@ -55,7 +57,13 @@ class Dashboard:
 
     def _visible(self):
         items = self.frozen if self.paused else list(reversed(self.session.alerts))
-        return [a for a in items if (not self.severity or a["severity"] in {"high", "critical"}) and self.filter.casefold() in json.dumps(a).casefold()]
+        items = [a for a in items if (not self.severity or a["severity"] in {"high", "critical"})
+                 and (not self.unacknowledged or not a.get("acknowledged"))
+                 and self.filter.casefold() in json.dumps(a).casefold()]
+        if self.priority_sort:
+            levels = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+            items = sorted(items, key=lambda a: (levels.get(a["severity"], 0), a["ts"], a["id"]), reverse=True)
+        return items
 
     def _loop(self, screen, pump) -> None:
         self.screen = screen
@@ -98,6 +106,14 @@ class Dashboard:
                 self.paused = not self.paused
                 if self.paused:
                     self.frozen = list(reversed(self.session.alerts))
+            elif key == ord("u"):
+                self.unacknowledged = not self.unacknowledged
+                self.selected = 0
+                self.message = "Showing unacknowledged alerts" if self.unacknowledged else "Showing all acknowledgements"
+            elif key == ord("s"):
+                self.priority_sort = not self.priority_sort
+                self.selected = 0
+                self.message = "Sorted by severity, then newest" if self.priority_sort else "Sorted newest first"
             elif key == ord("/"):
                 self.filter = self._prompt("Filter (empty clears): ")
                 self.selected = 0
@@ -178,5 +194,5 @@ class Dashboard:
             if not items:
                 self._put(10, 3, "No matching alerts. Detection continues.")
         self._put(height - 3, 2, self.message or self.session.note or "Vigilantia ex indiciis.  /  An alert is a lead; verify the evidence.")
-        self._put(height - 2, 2, "j/k move  Enter detail  / find  h high  p pause  a ack  e export  q quit", c.A_BOLD)
+        self._put(height - 2, 2, "j/k move  Enter detail  / find  h high  u unacked  s sort  p pause  a ack  e export  q quit", c.A_BOLD)
         screen.refresh()

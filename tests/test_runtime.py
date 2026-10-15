@@ -91,7 +91,8 @@ class RuntimeTests(unittest.TestCase):
                 for identifier in ("first", "second"):
                     store.add(Alert(identifier, "upstream_alert", "medium", 100, 100,
                                     "192.0.2.1", "198.51.100.1", 1, "Synthetic"))
-                store.acknowledge("' OR 1=1 --")
+                with self.assertRaises(ValueError):
+                    store.acknowledge("' OR 1=1 --")
                 self.assertFalse(any(row["acknowledged"] for row in store.list()))
                 store.acknowledge("first")
                 self.assertEqual({row["id"] for row in store.list() if row["acknowledged"]}, {"first"})
@@ -261,9 +262,31 @@ class RuntimeTests(unittest.TestCase):
                 with self.assertRaises(queue.Empty):
                     received.get(timeout=0.05)
                 path.rename(Path(folder) / "old.log")
+                # Intervallum sine via consulto observatur ante substitutionem.
+                self.assertEqual(received.get(timeout=3).issue, "input unavailable; retrying")
                 path.write_text("fresh\n")
                 self.assertIn("rotated", received.get(timeout=3).issue)
                 self.assertEqual(received.get(timeout=3).text, "fresh\n")
+            finally:
+                self.end_watcher(stop, thread)
+
+    def test_follow_atomic_replacement_discards_unterminated_old_record(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "events.log"
+            replacement = Path(folder) / "replacement.log"
+            path.write_text("first\npartial-old")
+            replacement.write_text("fresh\n")
+            stop, received, thread = self.watcher(path)
+            try:
+                self.assertEqual(received.get(timeout=3).text, "first\n")
+                with self.assertRaises(queue.Empty):
+                    received.get(timeout=0.05)
+                # Substitutio atomica viam semper praesentem servat.
+                replacement.replace(path)
+                self.assertIn("rotated", received.get(timeout=3).issue)
+                self.assertEqual(received.get(timeout=3).text, "fresh\n")
+                with self.assertRaises(queue.Empty):
+                    received.get(timeout=0.05)
             finally:
                 self.end_watcher(stop, thread)
 

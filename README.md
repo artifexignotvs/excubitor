@@ -1,44 +1,49 @@
 # EXCUBITOR
 
-**Scan detection. Authentication correlation. One terminal.**
+**Eight failed SSH logins. Then a successful one. What happened?**
 
-Excubitor turns network and authentication logs into explainable leads: which source touched twenty ports, which account attracted failures from several addresses, and which login succeeded after repeated failures. Every alert carries its window, threshold, evidence samples, and a suggested next check.
+Excubitor helps Linux administrators and SOC analysts inspect scan and authentication patterns in a terminal. Each alert shows the source, target, threshold, time window, evidence samples, and a suggested next check.
 
-*Vigilantia ex indiciis.* Vigilance from evidence.
+## Try the local demo
 
-```text
-                         E X C U B I T O R   /   0.1.0
-
-  COMPLETE  |  SYNTHETIC DEMO
-  EVENTS 93   ALERTS 9   INPUT ERRORS 0   LATE 0
-
-  UTC       LEVEL     RULE                       SOURCE               TARGET
-  12:02:15  HIGH      upstream_alert             192.0.2.70           198.51.100.90
-  12:02:09  MEDIUM    web_denial_burst           192.0.2.60           198.51.100.80
-  12:01:41  MEDIUM    web_path_scan              192.0.2.50           198.51.100.70
-  12:01:24  HIGH      distributed_auth           multiple             198.51.100.60
-  12:01:15  HIGH      password_spray             192.0.2.40           198.51.100.50
-  12:01:00  HIGH      auth_success_after_fail    192.0.2.30           198.51.100.40
-
-  j/k move  Enter detail  / filter  h high+  p freeze view  a ack  e export  q quit
-```
-
-The first release is a **log-based detector and investigation console**. It complements Suricata and Zeek. It does not capture packets, inspect payloads, block traffic, or replace an inline IDS/IPS. No comparative superiority or production detection rate is claimed.
-
-## Start in a minute
-
-Python 3.11 or later. No runtime dependencies, account, service, or API key. Interactive mode uses the standard `curses` module on Linux/macOS; plain and JSON modes work without it.
+Python 3.11 or later. No installation, runtime dependencies, account, service, or API key. The interactive console uses the standard `curses` module on Linux/macOS.
 
 ```bash
 git clone https://github.com/artifexignotvs/excubitor.git
 cd excubitor
+python3 -m excubitor demo
+```
+
+The demo replays **93 synthetic events** and emits all nine rules. The replay sends **no network traffic**. On a noninteractive terminal, use `python3 -m excubitor demo --plain`.
+
+![Recorded terminal demo: synthetic SSH failures followed by success, with alert evidence opened.](assets/ssh-investigation.gif)
+
+[Watch the terminal recording](assets/ssh-investigation.mp4). All addresses and events in this 0.1.0 recording are synthetic. The same alert workflow remains available in 0.2.0.
+
+## Follow one SSH finding
+
+In the demo, the account `operator` fails to authenticate eight times from `192.0.2.30` to `198.51.100.40`, then succeeds. Excubitor emits `auth_success_after_fail` because the failures and the success share an account, source, target, and service within the configured 300-second window.
+
+Press `/`, enter `auth_success_after_fail`, and press Enter to apply the filter. Press Enter again to inspect the selected alert. Review the observed failures, account, source, time window, and suggested next check. For a real finding, compare it with the server's authentication records and confirm whether the login was expected.
+
+A successful login after failures can be legitimate. This alert is an investigation lead, not proof of compromise. For account-specific correlation, use server authentication logs: encrypted SSH sensor observations often have no username.
+
+*Vigilantia ex indiciis.* Vigilance from evidence.
+
+EXCUBITOR is a **log-based detector and investigation console**. It complements Suricata and Zeek. It does not capture packets, inspect payloads, block traffic, or replace an inline IDS/IPS. No comparative superiority or production detection rate is claimed.
+
+## Install the command
+
+To use `excubitor` as a command, install from the checkout in a virtual environment:
+
+```bash
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install .
 excubitor demo
 ```
 
-The demo replays 93 synthetic events and emits all nine rules. It sends **no network traffic**. On a noninteractive terminal:
+Plain and JSON modes work without `curses`:
 
 ```bash
 excubitor demo --plain
@@ -46,7 +51,28 @@ excubitor demo --jsonl
 excubitor demo --db findings.db --output findings.json
 ```
 
-You can also run from the checkout without installation: `python3 -m excubitor demo`.
+## Investigation timelines (0.2.0)
+
+Start with the focused SSH scenario, save its alerts, then produce a timeline:
+
+```bash
+python3 -m excubitor demo --scenario ssh --plain --output ssh-alerts.json
+python3 -m excubitor incidents -i ssh-alerts.json --output-format markdown --output investigation.md
+python3 -m excubitor incidents -i ssh-alerts.json --min-alerts 2 --output incident.json
+```
+
+The focused demo contains nine synthetic events and two alerts. Timelines retain every alert and its evidence. They group exact IP endpoint pairs, with a maximum 300-second gap and an anchored 900-second span; `--gap` and `--max-span` tune those bounds. Missing or aggregate endpoints remain separate. Shared endpoints and timing do not establish causality, account ownership, or compromise. Overlapping alert counts are never summed into a purported unique event count.
+
+JSON and JSONL alert files are limited to 16 MiB and 10,000 alerts. Input order does not affect results; identical IDs deduplicate and conflicting IDs fail. `--min-alerts` reports how many alerts it omits. The report identifies the input SHA-256 and explicitly treats collection completeness as unknown. Keep collection errors and the original logs alongside it. Exported reports contain evidence and may contain private addresses, paths or account names; review them before sharing.
+
+Filter persisted history before exporting a case:
+
+```bash
+excubitor history --db findings.db --source 192.0.2.30 --destination 198.51.100.40 --unacknowledged
+excubitor history --db findings.db --severity high --since 1791979200 --until 1791982800
+```
+
+Source/destination and severity filters are exact; timestamps are inclusive Unix seconds. All filters apply before the result limit. Acknowledgement means reviewed, not resolved or harmless. Native alert JSON/JSONL can be imported into [Relatio Workbench](https://github.com/artifexignotvs/relatio-workbench) for case notes, triage and encrypted portable backups.
 
 ## Follow real logs
 
@@ -70,6 +96,8 @@ Live mode begins at the current end of each file. Add `--from-start` to consume 
 | `Enter` | Open or close evidence and next steps |
 | `/` | Search alert fields; empty search clears |
 | `h` | Show high/critical severity only |
+| `u` | Show unacknowledged alerts only |
+| `s` | Toggle severity-first ordering |
 | `p` | Freeze the displayed list; ingestion continues |
 | `a` | Toggle acknowledgement, persisted when a database is selected |
 | `e` | Export retained alerts to a new JSON file in the current directory |
@@ -136,6 +164,10 @@ python3 -m unittest discover -s tests -v
 Tests cover thresholds, benign traffic, time boundaries, late events, explicit-ID deduplication, bounded state, CIDR exemptions, IPv6, source adapters, file rotation, exports, and command-line workflows. Synthetic tests validate implemented behavior, not detection efficacy against all attacks. On Linux/macOS, a repeatable engine-only throughput exercise is available as `PYTHONPATH=. python3 tests/benchmark.py --profile repeated` (or `--profile many-keys`). It includes event construction, excludes parsing/display/storage, and reports capacity evictions alongside throughput. Its process RSS includes interpreter and runtime overhead; it is not a sensor or packet-rate comparison.
 
 The architecture is intentionally small enough to review: `parsers` normalize records; `engine` correlates bounded event windows; `ingest` reads files; `terminal` presents alerts; `storage` persists/export findings. A typed native JSON schema makes adding an external collector possible without running it inside the detector. [Format examples and schema](FORMATS.md) describe that boundary.
+
+## Help test a real workflow
+
+Run the local demo first. If you administer Linux hosts or investigate alerts in a SOC, the most useful next test is a small, authorized log sample in one of the [supported formats](FORMATS.md). Report parser incompatibilities with the input format and version, a **sanitized or synthetic** record, the command used, the expected result, and the actual result. Remove credentials, private addresses, usernames, hostnames, and paths before opening a public issue. See [the contribution guide](CONTRIBUTING.md) and [security policy](SECURITY.md).
 
 Next work: labeled real-world evaluation with reproducible false-positive measurements, durable collector checkpoints, more authentication adapters, and performance profiling under realistic mixed traffic. Packet capture, inline response, and threat-intelligence feeds are outside this release.
 

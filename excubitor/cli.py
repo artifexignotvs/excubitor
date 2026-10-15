@@ -16,6 +16,7 @@ from .config import TEMPLATE, load_config
 from .demo import demo_events
 from .engine import Engine, RULES
 from .ingest import follow, records
+from .incidents import correlate, load_alerts, markdown
 from .model import VERSION
 from .parsers import FORMATS, ParseError, parse_line
 from .storage import Store, exclusive_write, serialize
@@ -129,7 +130,7 @@ def run_stream(args, session):
 
 def run_replay(args, session):
     if args.command == "demo":
-        events = iter(demo_events())
+        events = iter(demo_events(args.scenario))
     else:
         # Fontes singuli ordine temporis praebendi sunt.
         streams = [parsed_file(path, session, args.format, args.year) for path in args.input]
@@ -170,6 +171,8 @@ def parser():
             p.add_argument("-i", "--input", action="append", required=True, help="Input file, repeat for multiple sources; analyze accepts - for stdin")
             p.add_argument("--format", choices=FORMATS, default="auto")
             p.add_argument("--year", type=int, help="Explicit UTC year for traditional syslog timestamps")
+        else:
+            p.add_argument("--scenario", choices=("all", "ssh"), default="all", help="All rules or eight failed SSH logins followed by success")
         p.add_argument("--config", help="TOML configuration")
         p.add_argument("--db", help="Persist every alert to a local SQLite database")
         mode = p.add_mutually_exclusive_group()
@@ -193,6 +196,19 @@ def parser():
     p.add_argument("--output")
     p.add_argument("--output-format", choices=("json", "jsonl", "csv"), default="json")
     p.add_argument("--ack", metavar="ALERT_ID", help="Acknowledge a stored alert")
+    p.add_argument("--source", help="Exact source address")
+    p.add_argument("--destination", help="Exact destination address")
+    p.add_argument("--severity", choices=("info", "low", "medium", "high", "critical"))
+    p.add_argument("--since", type=float, help="Inclusive Unix timestamp")
+    p.add_argument("--until", type=float, help="Inclusive Unix timestamp")
+    p.add_argument("--unacknowledged", action="store_true")
+    p = sub.add_parser("incidents", help="Group exported alerts into bounded investigation timelines")
+    p.add_argument("-i", "--input", required=True, help="EXCUBITOR JSON or JSONL alert export, at most 16 MiB")
+    p.add_argument("--gap", type=int, default=300, help="Maximum gap between alerts in seconds")
+    p.add_argument("--max-span", type=int, default=900, help="Maximum alert-time span in seconds")
+    p.add_argument("--min-alerts", type=int, default=1)
+    p.add_argument("--output-format", choices=("json", "markdown"), default="json")
+    p.add_argument("--output", help="New report file; never overwrites")
     return result
 
 
@@ -214,11 +230,28 @@ def main(argv=None):
         if args.command == "history":
             if not Path(args.db).is_file():
                 raise ValueError("History database does not exist")
+            if args.output and (Path(args.output).exists() or Path(args.output).is_symlink()):
+                raise ValueError("Output already exists; choose a new path")
             store = Store(args.db)
+            def selected_history():
+                return store.list(args.limit, args.rule, source=args.source, destination=args.destination,
+                                  severity=args.severity, since=args.since, until=args.until,
+                                  unacknowledged=args.unacknowledged)
+            # Inquisitio probatur ante mutationem status.
+            items = selected_history()
             if args.ack:
                 store.acknowledge(args.ack)
-            items = store.list(args.limit, args.rule)
+                items = selected_history()
             text = serialize(items, args.output_format)
+            if args.output:
+                exclusive_write(args.output, text)
+            else:
+                print(text, end="")
+            return 0
+        if args.command == "incidents":
+            alerts, digest = load_alerts(args.input)
+            report = correlate(alerts, args.gap, args.max_span, args.min_alerts, digest)
+            text = markdown(report) if args.output_format == "markdown" else json.dumps(report, indent=2, ensure_ascii=True) + "\n"
             if args.output:
                 exclusive_write(args.output, text)
             else:

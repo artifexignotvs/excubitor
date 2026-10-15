@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 @dataclass(frozen=True, slots=True)
 class Event:
